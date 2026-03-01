@@ -8,7 +8,7 @@ RUN dotnet restore
 
 # 复制源代码并构建
 COPY . .
-RUN dotnet publish -c Release -o /app/publish --no-restore
+RUN dotnet publish Endfield.Api.csproj -c Release -o /app/publish --no-restore
 
 # 运行阶段
 FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS final
