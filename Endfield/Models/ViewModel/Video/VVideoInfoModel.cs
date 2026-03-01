@@ -1,10 +1,17 @@
-namespace Endfield.Api.Models;
+using Endfield.Api.Models.ViewModel.Tag;
+
+namespace Endfield.Api.Models.ViewModel.Video;
 
 /// <summary>
-/// B站视频信息响应
+/// 视频信息响应模型
 /// </summary>
-public record BilibiliVideoInfo
+public record VVideoInfoModel
 {
+    /// <summary>
+    /// 视频ID
+    /// </summary>
+    public int Id { get; init; }
+
     /// <summary>
     /// 视频BV号
     /// </summary>
@@ -58,5 +65,5 @@ public record BilibiliVideoInfo
     /// <summary>
     /// 视频标签列表
     /// </summary>
-    public List<TagInfo> Tags { get; init; } = [];
+    public List<VTagInfoModel> Tags { get; init; } = [];
 }

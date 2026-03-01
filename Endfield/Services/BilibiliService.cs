@@ -2,96 +2,270 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using Endfield.Api.Data;
 using Endfield.Api.Entities;
-using Endfield.Api.Models;
+using Endfield.Api.Models.InputDto.Video;
+using Endfield.Api.Models.ViewModel.Common;
+using Endfield.Api.Models.ViewModel.Tag;
+using Endfield.Api.Models.ViewModel.Video;
+using Endfield.Api.Share.Enums;
+using Endfield.Api.Share.Models;
 using Microsoft.EntityFrameworkCore;
 
 namespace Endfield.Api.Services;
 
 /// <summary>
-/// B站视频服务接口
-/// </summary>
-public interface IBilibiliService
-{
-    /// <summary>
-    /// 根据BV号或链接获取视频信息
-    /// </summary>
-    /// <param name="input">BV号或视频链接</param>
-    /// <param name="forceRefresh">是否强制刷新（跳过缓存）</param>
-    /// <param name="cancellationToken">取消令牌</param>
-    /// <returns>视频信息</returns>
-    Task<BilibiliVideoInfo?> GetVideoInfoAsync(string input, bool forceRefresh = false, CancellationToken cancellationToken = default);
-}
-
-/// <summary>
 /// B站视频服务实现
 /// </summary>
-public partial class BilibiliService : IBilibiliService
+public partial class BilibiliService(
+    IHttpClientFactory httpClientFactory,
+    ILogger<BilibiliService> logger,
+    AppDbContext dbContext) : IBilibiliService
 {
-    private readonly HttpClient _httpClient;
-    private readonly ILogger<BilibiliService> _logger;
-    private readonly AppDbContext _dbContext;
+    private readonly HttpClient _httpClient = InitializeHttpClient(httpClientFactory);
 
-    public BilibiliService(
-        IHttpClientFactory httpClientFactory,
-        ILogger<BilibiliService> logger,
-        AppDbContext dbContext)
+    private static HttpClient InitializeHttpClient(IHttpClientFactory factory)
     {
-        _httpClient = httpClientFactory.CreateClient();
-        _httpClient.DefaultRequestHeaders.Add("User-Agent",
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add("User-Agent",
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
-        _httpClient.DefaultRequestHeaders.Add("Referer", "https://www.bilibili.com");
-        _logger = logger;
-        _dbContext = dbContext;
+        client.DefaultRequestHeaders.Add("Referer", "https://www.bilibili.com");
+        return client;
     }
 
-    public async Task<BilibiliVideoInfo?> GetVideoInfoAsync(string input, bool forceRefresh = false, CancellationToken cancellationToken = default)
+    /// <summary>
+    /// 导入视频
+    /// </summary>
+    public async Task<ReturnDataModel<VVideoInfoModel>> ImportVideoAsync(ImportVideoInputDto inputDto, CancellationToken token = default)
     {
-        // 从输入中提取BV号
-        var bvid = ExtractBvid(input);
+        var bvid = ExtractBvid(inputDto.Input);
         if (string.IsNullOrEmpty(bvid))
         {
-            _logger.LogWarning("无法从输入中提取有效的BV号: {Input}", input);
-            return null;
+            return ReturnDataModel<VVideoInfoModel>.FailResult("无法从输入中提取有效的BV号", ReturnDataCode.BadRequest);
         }
 
-        // 1. 先从数据库查找缓存（非强制刷新时）
-        if (!forceRefresh)
-        {
-            var cachedVideo = await _dbContext.BilibiliVideos
-                .AsNoTracking()
-                .Include(v => v.VideoTagMappings)
-                .ThenInclude(m => m.Tag)
-                .FirstOrDefaultAsync(v => v.Bvid == bvid, cancellationToken);
+        // 检查视频是否已存在
+        var existingVideo = await dbContext.BilibiliVideos
+            .Include(v => v.VideoTagMappings)
+            .ThenInclude(m => m.Tag)
+            .FirstOrDefaultAsync(v => v.Bvid == bvid, token);
 
-            if (cachedVideo != null)
+        if (existingVideo != null)
+        {
+            // 如果传入了新标签，更新标签
+            if (inputDto.TagIds != null && inputDto.TagIds.Count != 0)
             {
-                _logger.LogInformation("从数据库缓存获取视频信息: {Bvid}", bvid);
-                return MapToVideoInfo(cachedVideo);
+                await UpdateVideoTagsAsync(existingVideo, inputDto.TagIds, token);
+            }
+
+            return ReturnDataModel<VVideoInfoModel>.SuccessResult(MapToViewModel(existingVideo));
+        }
+
+        // 从B站API获取视频信息
+        var videoInfo = await FetchFromApiAsync(bvid, token);
+        if (videoInfo == null)
+        {
+            return ReturnDataModel<VVideoInfoModel>.FailResult("未找到视频信息，请检查BV号或链接是否正确", ReturnDataCode.NotFound);
+        }
+
+        // 保存到数据库
+        var entity = new BilibiliVideo
+        {
+            Bvid = videoInfo.Bvid,
+            Title = videoInfo.Title,
+            Cover = videoInfo.Cover,
+            Description = videoInfo.Description,
+            Duration = videoInfo.Duration,
+            OwnerName = videoInfo.OwnerName,
+            Url = videoInfo.Url,
+            ViewCount = videoInfo.ViewCount,
+            LikeCount = videoInfo.LikeCount,
+            PublishTime = videoInfo.PublishTime,
+            CreatedAt = DateTime.UtcNow
+        };
+
+        dbContext.BilibiliVideos.Add(entity);
+        await dbContext.SaveChangesAsync(token);
+
+        // 设置标签
+        if (inputDto.TagIds != null && inputDto.TagIds.Count != 0)
+        {
+            await UpdateVideoTagsAsync(entity, inputDto.TagIds, token);
+        }
+
+        // 重新查询以获取完整的标签信息
+        var savedVideo = await dbContext.BilibiliVideos
+            .Include(v => v.VideoTagMappings)
+            .ThenInclude(m => m.Tag)
+            .FirstAsync(v => v.Id == entity.Id, token);
+
+        logger.LogInformation("导入视频成功: {Bvid}", bvid);
+        return ReturnDataModel<VVideoInfoModel>.SuccessResult(MapToViewModel(savedVideo));
+    }
+
+    /// <summary>
+    /// 更新视频
+    /// </summary>
+    public async Task<ReturnDataModel<VVideoInfoModel>> UpdateVideoAsync(UpdateVideoInputDto inputDto, CancellationToken token = default)
+    {
+        var video = await dbContext.BilibiliVideos
+            .Include(v => v.VideoTagMappings)
+            .ThenInclude(m => m.Tag)
+            .FirstOrDefaultAsync(v => v.Id == inputDto.VideoId, token);
+
+        if (video == null)
+        {
+            return ReturnDataModel<VVideoInfoModel>.FailResult("视频不存在", ReturnDataCode.NotFound);
+        }
+
+        // 如果需要刷新视频信息
+        if (inputDto.RefreshInfo)
+        {
+            var videoInfo = await FetchFromApiAsync(video.Bvid, token);
+            if (videoInfo != null)
+            {
+                video.Title = videoInfo.Title;
+                video.Cover = videoInfo.Cover;
+                video.Description = videoInfo.Description;
+                video.Duration = videoInfo.Duration;
+                video.OwnerName = videoInfo.OwnerName;
+                video.ViewCount = videoInfo.ViewCount;
+                video.LikeCount = videoInfo.LikeCount;
+                video.PublishTime = videoInfo.PublishTime;
             }
         }
 
-        // 2. 调用B站API获取视频信息
-        var videoInfo = await FetchFromApiAsync(bvid, cancellationToken);
-        if (videoInfo == null)
+        // 更新标签
+        if (inputDto.TagIds != null)
         {
-            return null;
+            await UpdateVideoTagsAsync(video, inputDto.TagIds, token);
         }
 
-        // 3. 保存或更新到数据库
-        await SaveToDatabaseAsync(videoInfo, cancellationToken);
+        video.UpdatedAt = DateTime.UtcNow;
+        await dbContext.SaveChangesAsync(token);
 
-        return videoInfo;
+        logger.LogInformation("更新视频成功: {VideoId}", inputDto.VideoId);
+        return ReturnDataModel<VVideoInfoModel>.SuccessResult(MapToViewModel(video));
+    }
+
+    /// <summary>
+    /// 分页查询视频列表
+    /// </summary>
+    public async Task<ReturnDataModel<VBasePagingViewModel<VVideoInfoModel>>> QueryVideoListAsync(
+        QueryVideoListInputDto inputDto, CancellationToken token = default)
+    {
+        var query = dbContext.BilibiliVideos
+            .Include(v => v.VideoTagMappings)
+            .ThenInclude(m => m.Tag)
+            .AsNoTracking();
+
+        // 关键词搜索
+        if (!string.IsNullOrWhiteSpace(inputDto.Keyword))
+        {
+            var keyword = inputDto.Keyword.Trim();
+            query = query.Where(v => v.Title.Contains(keyword) || (v.Description != null && v.Description.Contains(keyword)));
+        }
+
+        // 标签筛选（AND关系）
+        if (inputDto.TagIds != null && inputDto.TagIds.Count != 0)
+        {
+            query = query.Where(v => inputDto.TagIds.All(tagId => v.VideoTagMappings.Any(m => m.TagId == tagId)));
+        }
+
+        var total = await query.CountAsync(token);
+
+        var videos = await query
+            .OrderByDescending(v => v.CreatedAt)
+            .Skip((inputDto.Page - 1) * inputDto.PageSize)
+            .Take(inputDto.PageSize)
+            .ToListAsync(token);
+
+        var result = new VBasePagingViewModel<VVideoInfoModel>
+        {
+            Total = total,
+            Page = inputDto.Page,
+            PageSize = inputDto.PageSize,
+            Data = videos.Select(MapToViewModel).ToList()
+        };
+
+        return ReturnDataModel<VBasePagingViewModel<VVideoInfoModel>>.SuccessResult(result);
+    }
+
+    /// <summary>
+    /// 获取视频详情
+    /// </summary>
+    public async Task<ReturnDataModel<VVideoInfoModel>> GetVideoByIdAsync(int videoId, CancellationToken token = default)
+    {
+        var video = await dbContext.BilibiliVideos
+            .Include(v => v.VideoTagMappings)
+            .ThenInclude(m => m.Tag)
+            .AsNoTracking()
+            .FirstOrDefaultAsync(v => v.Id == videoId, token);
+
+        if (video == null)
+        {
+            return ReturnDataModel<VVideoInfoModel>.FailResult("视频不存在", ReturnDataCode.NotFound);
+        }
+
+        return ReturnDataModel<VVideoInfoModel>.SuccessResult(MapToViewModel(video));
+    }
+
+    /// <summary>
+    /// 删除视频
+    /// </summary>
+    public async Task<ReturnDataModel<string>> DeleteVideoAsync(DeleteVideoInputDto inputDto, CancellationToken token = default)
+    {
+        var video = await dbContext.BilibiliVideos.FirstOrDefaultAsync(v => v.Id == inputDto.VideoId, token);
+        if (video == null)
+        {
+            return ReturnDataModel<string>.FailResult("视频不存在", ReturnDataCode.NotFound);
+        }
+
+        video.IsDeleted = true;
+        video.UpdatedAt = DateTime.UtcNow;
+        await dbContext.SaveChangesAsync(token);
+
+        logger.LogInformation("删除视频成功: {VideoId}", inputDto.VideoId);
+        return ReturnDataModel<string>.SuccessResult(video.Id.ToString(), "删除成功");
+    }
+
+    #region 私有方法
+
+    /// <summary>
+    /// 更新视频标签
+    /// </summary>
+    private async Task UpdateVideoTagsAsync(BilibiliVideo video, List<int> tagIds, CancellationToken token)
+    {
+        // 验证标签是否存在
+        var existingTagIds = await dbContext.VideoTags
+            .Where(t => tagIds.Contains(t.Id))
+            .Select(t => t.Id)
+            .ToListAsync(token);
+
+        // 移除所有旧标签
+        dbContext.VideoTagMappings.RemoveRange(video.VideoTagMappings);
+
+        // 添加新标签
+        foreach (var tagId in tagIds.Distinct().Where(id => existingTagIds.Contains(id)))
+        {
+            dbContext.VideoTagMappings.Add(new VideoTagMapping
+            {
+                VideoId = video.Id,
+                TagId = tagId,
+                CreatedAt = DateTime.UtcNow
+            });
+        }
+
+        await dbContext.SaveChangesAsync(token);
     }
 
     /// <summary>
     /// 从B站API获取视频信息
     /// </summary>
-    private async Task<BilibiliVideoInfo?> FetchFromApiAsync(string bvid, CancellationToken cancellationToken)
+    private async Task<VVideoInfoModel?> FetchFromApiAsync(string bvid, CancellationToken token)
     {
         try
         {
             var apiUrl = $"https://api.bilibili.com/x/web-interface/view?bvid={bvid}";
-            var response = await _httpClient.GetStringAsync(apiUrl, cancellationToken);
+            var response = await _httpClient.GetStringAsync(apiUrl, token);
             var jsonDoc = JsonDocument.Parse(response);
 
             var root = jsonDoc.RootElement;
@@ -100,7 +274,7 @@ public partial class BilibiliService : IBilibiliService
             if (code != 0)
             {
                 var message = root.TryGetProperty("message", out var msgElem) ? msgElem.GetString() : "未知错误";
-                _logger.LogWarning("B站API返回错误: Code={Code}, Message={Message}", code, message);
+                logger.LogWarning("B站API返回错误: Code={Code}, Message={Message}", code, message);
                 return null;
             }
 
@@ -109,75 +283,19 @@ public partial class BilibiliService : IBilibiliService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "获取B站视频信息失败，BV号: {Bvid}", bvid);
+            logger.LogError(ex, "获取B站视频信息失败，BV号: {Bvid}", bvid);
             return null;
         }
     }
 
     /// <summary>
-    /// 保存视频信息到数据库
+    /// 将实体映射为视图模型
     /// </summary>
-    private async Task SaveToDatabaseAsync(BilibiliVideoInfo videoInfo, CancellationToken cancellationToken)
+    private static VVideoInfoModel MapToViewModel(BilibiliVideo entity)
     {
-        try
+        return new VVideoInfoModel
         {
-            // 检查是否已存在
-            var existingVideo = await _dbContext.BilibiliVideos
-                .FirstOrDefaultAsync(v => v.Bvid == videoInfo.Bvid, cancellationToken);
-
-            if (existingVideo != null)
-            {
-                // 更新现有记录
-                existingVideo.Title = videoInfo.Title;
-                existingVideo.Cover = videoInfo.Cover;
-                existingVideo.Description = videoInfo.Description;
-                existingVideo.Duration = videoInfo.Duration;
-                existingVideo.OwnerName = videoInfo.OwnerName;
-                existingVideo.ViewCount = videoInfo.ViewCount;
-                existingVideo.LikeCount = videoInfo.LikeCount;
-                existingVideo.PublishTime = videoInfo.PublishTime;
-                existingVideo.UpdatedAt = DateTime.UtcNow;
-
-                _logger.LogInformation("更新数据库中的视频信息: {Bvid}", videoInfo.Bvid);
-            }
-            else
-            {
-                // 新增记录
-                var entity = new BilibiliVideo
-                {
-                    Bvid = videoInfo.Bvid,
-                    Title = videoInfo.Title,
-                    Cover = videoInfo.Cover,
-                    Description = videoInfo.Description,
-                    Duration = videoInfo.Duration,
-                    OwnerName = videoInfo.OwnerName,
-                    Url = videoInfo.Url,
-                    ViewCount = videoInfo.ViewCount,
-                    LikeCount = videoInfo.LikeCount,
-                    PublishTime = videoInfo.PublishTime,
-                    CreatedAt = DateTime.UtcNow,
-                    UpdatedAt = DateTime.UtcNow
-                };
-
-                _dbContext.BilibiliVideos.Add(entity);
-                _logger.LogInformation("保存视频信息到数据库: {Bvid}", videoInfo.Bvid);
-            }
-
-            await _dbContext.SaveChangesAsync(cancellationToken);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "保存视频信息到数据库失败: {Bvid}", videoInfo.Bvid);
-        }
-    }
-
-    /// <summary>
-    /// 将实体映射为响应模型
-    /// </summary>
-    private static BilibiliVideoInfo MapToVideoInfo(BilibiliVideo entity)
-    {
-        return new BilibiliVideoInfo
-        {
+            Id = entity.Id,
             Bvid = entity.Bvid,
             Title = entity.Title,
             Cover = entity.Cover,
@@ -188,7 +306,7 @@ public partial class BilibiliService : IBilibiliService
             ViewCount = entity.ViewCount,
             LikeCount = entity.LikeCount,
             PublishTime = entity.PublishTime,
-            Tags = entity.VideoTagMappings.Select(m => new TagInfo
+            Tags = entity.VideoTagMappings.Select(m => new VTagInfoModel
             {
                 Id = m.Tag.Id,
                 Name = m.Tag.Name,
@@ -199,10 +317,6 @@ public partial class BilibiliService : IBilibiliService
 
     /// <summary>
     /// 从输入字符串中提取BV号
-    /// 支持格式：
-    /// - 纯BV号：BV1xx411c7mD
-    /// - 短链接：https://b23.tv/BV1xx411c7mD
-    /// - 标准链接：https://www.bilibili.com/video/BV1xx411c7mD
     /// </summary>
     private static string? ExtractBvid(string input)
     {
@@ -210,18 +324,14 @@ public partial class BilibiliService : IBilibiliService
             return null;
 
         input = input.Trim();
-
-        // BV号正则：以BV开头，后跟10-12个字符（字母和数字）
-        var bvidPattern = BvidRegex();
-        var match = bvidPattern.Match(input);
-
+        var match = BvidRegex().Match(input);
         return match.Success ? match.Value : null;
     }
 
     /// <summary>
     /// 解析B站API返回的视频数据
     /// </summary>
-    private static BilibiliVideoInfo ParseVideoInfo(JsonElement data)
+    private static VVideoInfoModel ParseVideoInfo(JsonElement data)
     {
         var bvid = data.GetProperty("bvid").GetString()!;
         var title = data.GetProperty("title").GetString()!;
@@ -231,7 +341,6 @@ public partial class BilibiliService : IBilibiliService
         var owner = data.GetProperty("owner");
         var ownerName = owner.GetProperty("name").GetString()!;
 
-        // 获取统计数据
         long viewCount = 0, likeCount = 0;
         if (data.TryGetProperty("stat", out var stat))
         {
@@ -239,12 +348,11 @@ public partial class BilibiliService : IBilibiliService
             likeCount = stat.TryGetProperty("like", out var likeElem) ? likeElem.GetInt64() : 0;
         }
 
-        // 发布时间
         var publishTime = data.TryGetProperty("pubdate", out var pubDateElem)
             ? DateTimeOffset.FromUnixTimeSeconds(pubDateElem.GetInt64()).LocalDateTime
             : DateTime.MinValue;
 
-        return new BilibiliVideoInfo
+        return new VVideoInfoModel
         {
             Bvid = bvid,
             Title = title,
@@ -261,4 +369,6 @@ public partial class BilibiliService : IBilibiliService
 
     [GeneratedRegex(@"BV[a-zA-Z0-9]{10,12}", RegexOptions.IgnoreCase)]
     private static partial Regex BvidRegex();
+
+    #endregion
 }

@@ -4,6 +4,7 @@ using Endfield.Api.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace Endfield.Api.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260301081949_UpdateAuditModel")]
+    partial class UpdateAuditModel
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -26,7 +29,8 @@ namespace Endfield.Api.Migrations
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
+                        .HasColumnType("int")
+                        .HasColumnName("id");
 
                     MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("Id"));
 
@@ -124,93 +128,15 @@ namespace Endfield.Api.Migrations
 
                     b.HasIndex("IsDeleted");
 
-                    b.ToTable("bilibili_videos", (string)null);
-                });
-
-            modelBuilder.Entity("Endfield.Api.Entities.User", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<string>("Comment")
-                        .HasMaxLength(500)
-                        .HasColumnType("varchar(500)")
-                        .HasColumnName("comment");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime(6)")
-                        .HasColumnName("created_at");
-
-                    b.Property<long?>("CreatedBy")
-                        .HasColumnType("bigint")
-                        .HasColumnName("created_by");
-
-                    b.Property<string>("CreatedName")
-                        .HasMaxLength(100)
-                        .HasColumnType("varchar(100)")
-                        .HasColumnName("created_name");
-
-                    b.Property<string>("Email")
-                        .HasMaxLength(100)
-                        .HasColumnType("varchar(100)")
-                        .HasColumnName("email");
-
-                    b.Property<bool>("IsActive")
-                        .HasColumnType("tinyint(1)")
-                        .HasColumnName("is_active");
-
-                    b.Property<bool>("IsDeleted")
-                        .HasColumnType("tinyint(1)")
-                        .HasColumnName("is_deleted");
-
-                    b.Property<string>("Nickname")
-                        .HasMaxLength(50)
-                        .HasColumnType("varchar(50)")
-                        .HasColumnName("nickname");
-
-                    b.Property<string>("Password")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("varchar(200)")
-                        .HasColumnName("password");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("datetime(6)")
-                        .HasColumnName("updated_at");
-
-                    b.Property<long?>("UpdatedBy")
-                        .HasColumnType("bigint")
-                        .HasColumnName("updated_by");
-
-                    b.Property<string>("UpdatedName")
-                        .HasMaxLength(100)
-                        .HasColumnType("varchar(100)")
-                        .HasColumnName("updated_name");
-
-                    b.Property<string>("Username")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("varchar(50)")
-                        .HasColumnName("username");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("IsDeleted");
-
-                    b.HasIndex("Username")
-                        .IsUnique();
-
-                    b.ToTable("users", (string)null);
+                    b.ToTable("bilibili_videos");
                 });
 
             modelBuilder.Entity("Endfield.Api.Entities.VideoTag", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
+                        .HasColumnType("int")
+                        .HasColumnName("id");
 
                     MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("Id"));
 
@@ -279,18 +205,20 @@ namespace Endfield.Api.Migrations
 
                     b.HasIndex("SortOrder");
 
-                    b.ToTable("video_tags", (string)null);
+                    b.ToTable("video_tags");
                 });
 
             modelBuilder.Entity("Endfield.Api.Entities.VideoTagMapping", b =>
                 {
                     b.Property<int>("VideoId")
                         .HasColumnType("int")
-                        .HasColumnName("video_id");
+                        .HasColumnName("video_id")
+                        .HasColumnOrder(0);
 
                     b.Property<int>("TagId")
                         .HasColumnType("int")
-                        .HasColumnName("tag_id");
+                        .HasColumnName("tag_id")
+                        .HasColumnOrder(1);
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime(6)")
@@ -302,7 +230,7 @@ namespace Endfield.Api.Migrations
 
                     b.HasIndex("TagId");
 
-                    b.ToTable("video_tag_mappings", (string)null);
+                    b.ToTable("video_tag_mappings");
                 });
 
             modelBuilder.Entity("Endfield.Api.Entities.VideoTagMapping", b =>
