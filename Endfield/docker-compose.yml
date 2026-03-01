@@ -1,0 +1,50 @@
+version: '3.8'
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: endfield-api
+    ports:
+      - "8001:8001"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      - ConnectionStrings__DefaultConnection=Server=mysql;Port=3306;Database=endfield;User=root;Password=your_password;
+      - Jwt__SecretKey=Your_Super_Secret_Key_For_JWT_Authentication_Min_32_Chars
+      - Jwt__Issuer=Endfield.Api
+      - Jwt__Audience=Endfield.Api.Users
+      - Jwt__ExpirationHours=24
+    depends_on:
+      mysql:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - endfield-network
+
+  mysql:
+    image: mysql:8.0
+    container_name: endfield-mysql
+    ports:
+      - "3306:3306"
+    environment:
+      - MYSQL_ROOT_PASSWORD=your_password
+      - MYSQL_DATABASE=endfield
+      - TZ=Asia/Shanghai
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - endfield-network
+
+volumes:
+  mysql-data:
+
+networks:
+  endfield-network:
+    driver: bridge

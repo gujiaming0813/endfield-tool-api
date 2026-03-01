@@ -34,6 +34,7 @@ public class BilibiliController(IBilibiliService service) : BaseController
     /// <summary>
     /// 分页查询视频列表（支持关键词和标签筛选）
     /// </summary>
+    [AllowAnonymous]
     [HttpPost("QueryVideoList")]
     public async Task<ActionResult<string>> QueryVideoListAsync(QueryVideoListInputDto inputDto, CancellationToken token)
     {

@@ -142,8 +142,14 @@ public partial class BilibiliService(
         video.UpdatedAt = DateTime.UtcNow;
         await dbContext.SaveChangesAsync(token);
 
+        // 重新查询以获取完整的标签信息（包括新添加的标签导航属性）
+        var updatedVideo = await dbContext.BilibiliVideos
+            .Include(v => v.VideoTagMappings)
+            .ThenInclude(m => m.Tag)
+            .FirstAsync(v => v.Id == inputDto.VideoId, token);
+
         logger.LogInformation("更新视频成功: {VideoId}", inputDto.VideoId);
-        return ReturnDataModel<VVideoInfoModel>.SuccessResult(MapToViewModel(video));
+        return ReturnDataModel<VVideoInfoModel>.SuccessResult(MapToViewModel(updatedVideo));
     }
 
     /// <summary>
@@ -167,7 +173,14 @@ public partial class BilibiliService(
         // 标签筛选（AND关系）
         if (inputDto.TagIds != null && inputDto.TagIds.Count != 0)
         {
-            query = query.Where(v => inputDto.TagIds.All(tagId => v.VideoTagMappings.Any(m => m.TagId == tagId)));
+            var tagIds = inputDto.TagIds.Distinct().ToList();
+            var requiredCount = tagIds.Count;
+
+            // 使用子查询：查找拥有所有指定标签的视频
+            query = query.Where(v =>
+                dbContext.VideoTagMappings
+                    .Where(m => m.VideoId == v.Id && tagIds.Contains(m.TagId))
+                    .Count() == requiredCount);
         }
 
         var total = await query.CountAsync(token);
@@ -183,7 +196,7 @@ public partial class BilibiliService(
             Total = total,
             Page = inputDto.Page,
             PageSize = inputDto.PageSize,
-            Data = videos.Select(MapToViewModel).ToList()
+            Rows = videos.Select(MapToViewModel).ToList()
         };
 
         return ReturnDataModel<VBasePagingViewModel<VVideoInfoModel>>.SuccessResult(result);

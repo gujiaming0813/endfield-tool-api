@@ -24,5 +24,5 @@ public record VBasePagingViewModel<T>
     /// <summary>
     /// 数据列表
     /// </summary>
-    public List<T> Data { get; init; } = [];
+    public List<T> Rows { get; init; } = [];
 }

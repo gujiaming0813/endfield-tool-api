@@ -14,6 +14,7 @@ public class TagsController(ITagService service) : BaseController
     /// <summary>
     /// 获取所有标签
     /// </summary>
+    [AllowAnonymous]
     [HttpPost("GetTagList")]
     public async Task<ActionResult<string>> GetTagListAsync(CancellationToken token)
     {

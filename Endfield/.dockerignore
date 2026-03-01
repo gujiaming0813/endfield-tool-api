@@ -1,0 +1,11 @@
+**/bin
+**/obj
+**/out
+**/.idea
+**/.vscode
+**/.vs
+**/*.user
+**/*.suo
+**/appsettings.Development.json
+**/.DS_Store
+**/Migrations
