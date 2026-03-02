@@ -21,6 +21,8 @@
         <PackageReference Include="Serilog.Sinks.Console" Version="6.0.0" />
         <PackageReference Include="Serilog.Sinks.File" Version="6.0.0" />
         <PackageReference Include="Serilog.Formatting.Compact" Version="3.0.0" />
+        <!-- Ed25519 签名算法支持 -->
+        <PackageReference Include="BouncyCastle.Cryptography" Version="2.4.0" />
     </ItemGroup>
 
 </Project>

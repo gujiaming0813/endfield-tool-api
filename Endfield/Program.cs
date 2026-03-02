@@ -3,6 +3,7 @@ using Endfield.Api.Data;
 using Endfield.Api.Services;
 using Endfield.Api.Share.Options;
 using Endfield.Api.Filters;
+using Endfield.Api.Entities;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -214,6 +215,7 @@ try
     builder.Services.AddScoped<IBilibiliService, BilibiliService>();
     builder.Services.AddScoped<ITagService, TagService>();
     builder.Services.AddScoped<IAuthService, AuthService>();
+    builder.Services.AddScoped<IRequestLogService, RequestLogService>();
 
     // 配置QQ机器人选项
     builder.Services.Configure<QQBotOptions>(builder.Configuration.GetSection("QQBot"));

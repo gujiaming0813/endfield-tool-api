@@ -1,7 +1,9 @@
 using System.Text.Json;
+using Endfield.Api.Models.InputDto.QQBot;
 using Endfield.Api.Models.QQBot;
 using Endfield.Api.Services;
 using Microsoft.AspNetCore.Mvc;
+using Serilog;
 
 namespace Endfield.Api.Controllers;
 
@@ -34,40 +36,31 @@ public class QQBotController : ControllerBase
     /// 接收QQ开放平台推送的事件
     /// </summary>
     [HttpPost("callback")]
-    public async Task<IActionResult> Callback()
+    public async Task<IActionResult> Callback([FromBody] QQBotCallbackInputDto inputDto)
     {
         try
         {
-            using var reader = new StreamReader(Request.Body);
-            var body = await reader.ReadToEndAsync();
-
-            _logger.LogInformation("收到Webhook回调: {Body}", body);
-
-            var payload = JsonSerializer.Deserialize<QQWebhookPayload>(body, _jsonOptions);
-            if (payload == null)
-            {
-                _logger.LogWarning("无法解析Webhook Payload");
-                return BadRequest();
-            }
+            Log.Information("收到Webhook回调 - OpCode: {OpCode}, EventType: {EventType}, Sequence: {Sequence}",
+                inputDto.OpCode, inputDto.EventType, inputDto.Sequence);
 
             // 处理回调地址验证
-            if (payload.OpCode == QQWebhookOpCodes.Validation)
+            if (inputDto.OpCode == QQWebhookOpCodes.Validation)
             {
-                return HandleValidation(payload);
+                return HandleValidation(inputDto);
             }
 
             // 处理事件分发
-            if (payload.OpCode == QQWebhookOpCodes.Dispatch)
+            if (inputDto.OpCode == QQWebhookOpCodes.Dispatch)
             {
-                return await HandleDispatchAsync(payload);
+                return await HandleDispatchAsync(inputDto);
             }
 
-            _logger.LogWarning("未处理的操作码: {OpCode}", payload.OpCode);
+            Log.Warning("未处理的操作码: {OpCode}", inputDto.OpCode);
             return Ok();
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "处理Webhook回调失败");
+            Log.Error(ex, "处理Webhook回调失败");
             return StatusCode(500);
         }
     }
@@ -75,44 +68,45 @@ public class QQBotController : ControllerBase
     /// <summary>
     /// 处理回调地址验证
     /// </summary>
-    private IActionResult HandleValidation(QQWebhookPayload payload)
+    private IActionResult HandleValidation(QQBotCallbackInputDto inputDto)
     {
         try
         {
-            var dataJson = payload.Data?.ToString();
+            // 从 Data 中解析验证请求
+            var dataJson = inputDto.Data?.ToString();
             if (string.IsNullOrEmpty(dataJson))
             {
-                _logger.LogWarning("验证请求数据为空");
+                Log.Warning("验证请求数据为空");
                 return BadRequest();
             }
 
-            var validationRequest = JsonSerializer.Deserialize<QQValidationRequest>(dataJson, _jsonOptions);
-            if (validationRequest == null)
+            var validationInput = JsonSerializer.Deserialize<QQBotValidationInputDto>(dataJson, _jsonOptions);
+            if (validationInput == null)
             {
-                _logger.LogWarning("无法解析验证请求");
+                Log.Warning("无法解析验证请求");
                 return BadRequest();
             }
 
-            _logger.LogInformation("收到回调地址验证请求 - PlainToken: {PlainToken}, EventTs: {EventTs}",
-                validationRequest.PlainToken, validationRequest.EventTs);
+            Log.Information("收到回调地址验证请求 - PlainToken: {PlainToken}, EventTs: {EventTs}",
+                validationInput.PlainToken, validationInput.EventTs);
 
             // 计算签名
-            var signature = _qqBotService.CalculateSignature(validationRequest.EventTs, validationRequest.PlainToken);
+            var signature = _qqBotService.CalculateSignature(validationInput.EventTs, validationInput.PlainToken);
 
-            var response = new QQValidationResponse
+            var response = new
             {
-                PlainToken = validationRequest.PlainToken,
-                Signature = signature
+                plain_token = validationInput.PlainToken,
+                signature = signature
             };
 
-            _logger.LogInformation("回调地址验证响应 - PlainToken: {PlainToken}, Signature: {Signature}",
-                response.PlainToken, response.Signature);
+            Log.Information("回调地址验证响应 - PlainToken: {PlainToken}, Signature: {Signature}",
+                response.plain_token, response.signature);
 
             return Ok(response);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "处理回调地址验证失败");
+            Log.Error(ex, "处理回调地址验证失败");
             return StatusCode(500);
         }
     }
@@ -120,42 +114,35 @@ public class QQBotController : ControllerBase
     /// <summary>
     /// 处理事件分发
     /// </summary>
-    private async Task<IActionResult> HandleDispatchAsync(QQWebhookPayload payload)
+    private async Task<IActionResult> HandleDispatchAsync(QQBotCallbackInputDto inputDto)
     {
         try
         {
-            var eventType = payload.EventType;
-            _logger.LogInformation("收到事件 - 类型: {EventType}, 序号: {Sequence}", eventType, payload.Sequence);
+            var eventType = inputDto.EventType;
+            Log.Information("收到事件 - 类型: {EventType}, 序号: {Sequence}", eventType, inputDto.Sequence);
 
-            if (payload.Data == null)
+            if (inputDto.Data == null)
             {
-                _logger.LogWarning("事件数据为空");
-                return Ok();
+                Log.Warning("事件数据为空");
+                return Ok(new { code = 0 });
             }
 
-            var dataJson = payload.Data.ToString();
+            var dataJson = inputDto.Data.ToString();
 
             switch (eventType)
             {
                 case QQEventTypes.AtMessageCreate:
                 case QQEventTypes.GroupAtMessageCreate:
-                    var message = JsonSerializer.Deserialize<QQMessageEvent>(dataJson!, _jsonOptions);
-                    if (message != null)
-                    {
-                        await _qqBotService.HandleMessageEventAsync(message, eventType!);
-                    }
-                    break;
-
                 case QQEventTypes.C2CMessageCreate:
-                    var c2cMessage = JsonSerializer.Deserialize<QQMessageEvent>(dataJson!, _jsonOptions);
-                    if (c2cMessage != null)
+                    var messageInput = JsonSerializer.Deserialize<QQBotMessageInputDto>(dataJson!, _jsonOptions);
+                    if (messageInput != null)
                     {
-                        await _qqBotService.HandleMessageEventAsync(c2cMessage, eventType!);
+                        await HandleMessageEventAsync(messageInput, eventType!);
                     }
                     break;
 
                 default:
-                    _logger.LogDebug("未处理的事件类型: {EventType}", eventType);
+                    Log.Debug("未处理的事件类型: {EventType}", eventType);
                     break;
             }
 
@@ -164,9 +151,73 @@ public class QQBotController : ControllerBase
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "处理事件分发失败");
+            Log.Error(ex, "处理事件分发失败");
             return Ok(new { code = 0 }); // 仍然返回成功，避免平台重试
         }
+    }
+
+    /// <summary>
+    /// 处理消息事件
+    /// </summary>
+    private async Task HandleMessageEventAsync(QQBotMessageInputDto messageInput, string eventType)
+    {
+        try
+        {
+            Log.Information("处理消息 - ID: {MessageId}, 类型: {EventType}, 内容: {Content}",
+                messageInput.Id, eventType, messageInput.Content);
+
+            // 原样返回消息（移除@部分）
+            var content = CleanMessageContent(messageInput);
+
+            if (string.IsNullOrWhiteSpace(content))
+            {
+                content = "你好！";
+            }
+
+            // 根据消息类型发送回复
+            if (eventType == QQEventTypes.AtMessageCreate && !string.IsNullOrEmpty(messageInput.ChannelId))
+            {
+                // 频道消息
+                await _qqBotService.SendChannelMessageAsync(messageInput.ChannelId, content, messageInput.Id);
+            }
+            else if (eventType == QQEventTypes.GroupAtMessageCreate && !string.IsNullOrEmpty(messageInput.GroupId))
+            {
+                // 群消息
+                await _qqBotService.SendGroupMessageAsync(messageInput.GroupId, content, messageInput.Id);
+            }
+            else if (eventType == QQEventTypes.C2CMessageCreate)
+            {
+                // 私信消息
+                var openid = messageInput.Author?.UserOpenId ?? messageInput.Author?.Id ?? "";
+                if (!string.IsNullOrEmpty(openid))
+                {
+                    await _qqBotService.SendC2CMessageAsync(openid, content, messageInput.Id);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "处理消息事件失败");
+        }
+    }
+
+    /// <summary>
+    /// 清理消息内容（移除@部分）
+    /// </summary>
+    private static string CleanMessageContent(QQBotMessageInputDto message)
+    {
+        var content = message.Content;
+        if (message.Mentions != null)
+        {
+            foreach (var mention in message.Mentions)
+            {
+                if (!string.IsNullOrEmpty(mention.Id))
+                {
+                    content = content.Replace($"<@{mention.Id}>", "").Trim();
+                }
+            }
+        }
+        return content.Trim();
     }
 
     /// <summary>

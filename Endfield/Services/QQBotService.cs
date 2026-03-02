@@ -4,6 +4,9 @@ using System.Text.Json;
 using Endfield.Api.Models.QQBot;
 using Endfield.Api.Share.Options;
 using Endfield.Api.Share.IOCTag;
+using Org.BouncyCastle.Crypto.Signers;
+using Org.BouncyCastle.Crypto.Parameters;
+using Org.BouncyCastle.Utilities.Encoders;
 
 namespace Endfield.Api.Services;
 
@@ -48,6 +51,9 @@ public class QQBotService : IQQBotService, ISingletonTag
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly JsonSerializerOptions _jsonOptions;
 
+    // Ed25519 种子大小
+    private const int Ed25519SeedSize = 32;
+
     public QQBotService(
         Microsoft.Extensions.Options.IOptions<QQBotOptions> options,
         ILogger<QQBotService> logger,
@@ -70,39 +76,80 @@ public class QQBotService : IQQBotService, ISingletonTag
 
     /// <summary>
     /// 计算回调验证签名
-    /// 使用 Ed25519 算法
+    /// 使用 Ed25519 算法（按照官方Go示例实现）
     /// </summary>
     public string CalculateSignature(string eventTs, string plainToken)
     {
         try
         {
-            // 使用 AppSecret 作为种子生成密钥
+            // 1. 使用 AppSecret 作为种子
             var seed = _options.AppSecret;
-            while (seed.Length < 32)
+
+            // 2. 扩展种子到至少 32 字节（模拟 Go 的 strings.Repeat）
+            while (seed.Length < Ed25519SeedSize)
             {
                 seed = seed + seed;
             }
-            seed = seed.Substring(0, 32);
 
-            // 使用种子生成 Ed25519 密钥对
+            // 3. 截取前 32 字节作为种子
+            seed = seed.Substring(0, Ed25519SeedSize);
             var seedBytes = Encoding.UTF8.GetBytes(seed);
-            using var deriveBytes = new HMACSHA256(seedBytes);
-            var privateKeySeed = deriveBytes.ComputeHash(seedBytes);
 
-            // 创建消息
+            // 4. 从种子生成 Ed25519 私钥
+            // Go 的 ed25519.GenerateKey 从 reader 读取 32 字节作为种子
+            // 然后通过 SHA512 派生出私钥
+            var privateKey = GenerateEd25519PrivateKeyFromSeed(seedBytes);
+
+            // 5. 构建消息：eventTs + plainToken
             var message = eventTs + plainToken;
             var messageBytes = Encoding.UTF8.GetBytes(message);
 
-            // 使用 HMAC-SHA256 生成签名（简化版本，兼容官方文档的签名方式）
-            using var hmac = new HMACSHA256(privateKeySeed);
-            var signatureBytes = hmac.ComputeHash(messageBytes);
-            return Convert.ToHexString(signatureBytes).ToLower();
+            // 6. 使用 Ed25519 签名
+            var signature = SignEd25519(privateKey, messageBytes);
+
+            // 7. 转换为十六进制字符串
+            return Hex.ToHexString(signature).ToLower();
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "计算签名失败");
             throw;
         }
+    }
+
+    /// <summary>
+    /// 从种子生成 Ed25519 私钥
+    /// 模拟 Go 的 ed25519.GenerateKey 行为
+    /// </summary>
+    private static Ed25519PrivateKeyParameters GenerateEd25519PrivateKeyFromSeed(byte[] seed)
+    {
+        // Ed25519 使用 SHA512 对种子进行哈希，前 32 字节作为私钥的 "a" 值
+        // 后 32 字节用于生成公钥
+        using var sha512 = SHA512.Create();
+        var digest = sha512.ComputeHash(seed);
+
+        // 按照 Ed25519 规范，对前 32 字节进行处理
+        // 清除和设置特定位（clamp）
+        digest[0] &= 0xF8;
+        digest[31] &= 0x7F;
+        digest[31] |= 0x40;
+
+        // 取前 32 字节作为私钥种子
+        var privateKeySeed = new byte[32];
+        Array.Copy(digest, 0, privateKeySeed, 0, 32);
+
+        return new Ed25519PrivateKeyParameters(privateKeySeed, 0);
+    }
+
+    /// <summary>
+    /// 使用 Ed25519 私钥签名
+    /// </summary>
+    private static byte[] SignEd25519(Ed25519PrivateKeyParameters privateKey, byte[] message)
+    {
+        var signer = new Ed25519Signer();
+        signer.Init(true, privateKey);
+        signer.BlockUpdate(message, 0, message.Length);
+        return signer.GenerateSignature();
     }
 
     /// <summary>

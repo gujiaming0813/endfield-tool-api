@@ -1,22 +1,42 @@
 using System.Diagnostics;
+using System.Text;
+using System.Text.Encodings.Web;
 using System.Text.Json;
+using Endfield.Api.Entities;
+using Endfield.Api.Services;
 using Microsoft.AspNetCore.Mvc.Filters;
 using Serilog;
-using Serilog.Events;
 
 namespace Endfield.Api.Filters;
 
 /// <summary>
-/// 全局日志拦截器 - AOP方式记录请求和响应
+/// 全局日志拦截器 - AOP方式记录请求和响应，并保存到数据库
 /// </summary>
 public class LogActionFilter : IAsyncActionFilter
 {
     private const string StopwatchKey = "__LogActionFilter_Stopwatch__";
+    private const string RequestLogKey = "__LogActionFilter_RequestLog__";
+    private const string RequestBodyKey = "__LogActionFilter_RequestBody__";
+
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        WriteIndented = false,
+        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping // 支持中文不转义
+    };
+
     private static readonly HashSet<string> SensitiveFields = new(StringComparer.OrdinalIgnoreCase)
     {
         "password", "passwd", "pwd", "secret", "token", "accesstoken", "refreshtoken",
         "apikey", "api_key", "authorization", "creditcard", "cardnumber"
     };
+
+    private readonly IRequestLogService _requestLogService;
+
+    public LogActionFilter(IRequestLogService requestLogService)
+    {
+        _requestLogService = requestLogService;
+    }
 
     public async Task OnActionExecutionAsync(ActionExecutingContext context, ActionExecutionDelegate next)
     {
@@ -28,22 +48,59 @@ public class LogActionFilter : IAsyncActionFilter
         context.HttpContext.Items["CorrelationId"] = correlationId;
         context.HttpContext.Items[StopwatchKey] = stopwatch;
 
-        // 获取请求信息
+        // 存储 API 名称（Controller/Action）
+        var controller = context.ActionDescriptor.RouteValues["controller"];
+        var action = context.ActionDescriptor.RouteValues["action"];
+        if (!string.IsNullOrEmpty(controller) && !string.IsNullOrEmpty(action))
+        {
+            context.HttpContext.Items["ApiName"] = $"{controller}/{action}";
+        }
+
+        // 读取请求体（需要启用缓冲）
+        string? requestBody = null;
+        if (httpRequest.ContentLength > 0)
+        {
+            try
+            {
+                httpRequest.EnableBuffering();
+                using var reader = new StreamReader(httpRequest.Body, Encoding.UTF8, leaveOpen: true);
+                requestBody = await reader.ReadToEndAsync();
+                httpRequest.Body.Position = 0; // 重置位置以便后续读取
+
+                // 清理敏感信息
+                requestBody = SanitizeJson(requestBody);
+            }
+            catch
+            {
+                requestBody = "[无法读取请求体]";
+            }
+        }
+
+        // 获取 Action 参数作为请求体的备选
+        if (string.IsNullOrEmpty(requestBody) && context.ActionArguments.Count > 0)
+        {
+            requestBody = JsonSerializer.Serialize(SanitizeArguments(context.ActionArguments), JsonOptions);
+        }
+
+        // 创建请求日志实体
+        var requestLog = _requestLogService.CreateRequestLog(context.HttpContext, requestBody);
+        context.HttpContext.Items[RequestLogKey] = requestLog;
+
+        // 获取请求信息（用于 Serilog 日志）
         var requestInfo = new
         {
-            CorrelationId = correlationId,
-            Method = httpRequest.Method,
-            Path = httpRequest.Path.Value,
-            QueryString = httpRequest.QueryString.Value,
-            UserAgent = httpRequest.Headers.UserAgent.ToString(),
-            IpAddress = GetClientIpAddress(context.HttpContext),
-            UserId = context.HttpContext.User?.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value,
-            Controller = context.Controller?.GetType().Name,
-            Action = context.ActionDescriptor.RouteValues["action"],
+            requestLog.CorrelationId,
+            requestLog.RequestMethod,
+            requestLog.RequestPath,
+            requestLog.QueryString,
+            requestLog.UserAgent,
+            requestLog.ClientIp,
+            requestLog.UserId,
+            requestLog.ApiName,
             Arguments = SanitizeArguments(context.ActionArguments)
         };
 
-        // 记录请求开始
+        // 记录请求开始（同时输出到 Serilog）
         Log.Information("HTTP请求开始 {@RequestInfo}", requestInfo);
 
         // 执行Action
@@ -51,18 +108,49 @@ public class LogActionFilter : IAsyncActionFilter
 
         stopwatch.Stop();
 
-        // 记录响应
+        // 获取响应体
+        string? responseBody = null;
+        if (executedContext.Result is Microsoft.AspNetCore.Mvc.ObjectResult objectResult)
+        {
+            try
+            {
+                responseBody = JsonSerializer.Serialize(objectResult.Value, JsonOptions);
+            }
+            catch
+            {
+                responseBody = "[无法序列化响应]";
+            }
+        }
+        else if (executedContext.Result is Microsoft.AspNetCore.Mvc.JsonResult jsonResult)
+        {
+            try
+            {
+                responseBody = JsonSerializer.Serialize(jsonResult.Value, JsonOptions);
+            }
+            catch
+            {
+                responseBody = "[无法序列化响应]";
+            }
+        }
+
+        // 更新响应信息到请求日志
+        RequestLogService.UpdateResponseInfo(requestLog, context.HttpContext, responseBody, executedContext.Exception);
+
+        // 异步保存日志到数据库（不阻塞请求）
+        await _requestLogService.SaveLogAsync(requestLog);
+
+        // 记录响应（同时输出到 Serilog）
         var responseInfo = new
         {
-            CorrelationId = correlationId,
-            StatusCode = executedContext.HttpContext.Response.StatusCode,
-            ElapsedMilliseconds = stopwatch.ElapsedMilliseconds,
-            Success = executedContext.Exception == null,
+            requestLog.CorrelationId,
+            requestLog.StatusCode,
+            requestLog.DurationMs,
+            requestLog.IsSuccess,
             Exception = executedContext.Exception != null ? new
             {
                 Type = executedContext.Exception.GetType().Name,
-                Message = executedContext.Exception.Message,
-                StackTrace = executedContext.Exception.StackTrace
+                executedContext.Exception.Message,
+                executedContext.Exception.StackTrace
             } : null
         };
 
@@ -74,30 +162,6 @@ public class LogActionFilter : IAsyncActionFilter
         {
             Log.Information("HTTP请求完成 {@ResponseInfo}", responseInfo);
         }
-    }
-
-    /// <summary>
-    /// 获取客户端IP地址
-    /// </summary>
-    private static string GetClientIpAddress(HttpContext httpContext)
-    {
-        var ip = httpContext.Request.Headers["X-Forwarded-For"].FirstOrDefault();
-        if (!string.IsNullOrEmpty(ip))
-        {
-            ip = ip.Split(',').FirstOrDefault()?.Trim();
-        }
-
-        if (string.IsNullOrEmpty(ip))
-        {
-            ip = httpContext.Request.Headers["X-Real-IP"].FirstOrDefault();
-        }
-
-        if (string.IsNullOrEmpty(ip))
-        {
-            ip = httpContext.Connection.RemoteIpAddress?.ToString();
-        }
-
-        return ip ?? "unknown";
     }
 
     /// <summary>
@@ -130,7 +194,7 @@ public class LogActionFilter : IAsyncActionFilter
                 // 复杂对象，序列化并清理敏感字段
                 try
                 {
-                    var json = JsonSerializer.Serialize(arg.Value);
+                    var json = JsonSerializer.Serialize(arg.Value, JsonOptions);
                     sanitized[arg.Key] = SanitizeJson(json);
                 }
                 catch
@@ -159,7 +223,11 @@ public class LogActionFilter : IAsyncActionFilter
         {
             using var doc = JsonDocument.Parse(json);
             using var stream = new MemoryStream();
-            using (var jsonWriter = new Utf8JsonWriter(stream, new JsonWriterOptions { Indented = false }))
+            using (var jsonWriter = new Utf8JsonWriter(stream, new JsonWriterOptions
+            {
+                Indented = false,
+                Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping // 支持中文不转义
+            }))
             {
                 SanitizeJsonElement(doc.RootElement, jsonWriter);
                 jsonWriter.Flush();

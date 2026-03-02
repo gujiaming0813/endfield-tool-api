@@ -4,6 +4,7 @@ using Endfield.Api.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace Endfield.Api.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260302073510_AddRequestLogComments")]
+    partial class AddRequestLogComments
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -26,9 +29,7 @@ namespace Endfield.Api.Migrations
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("int")
-                        .HasColumnName("id")
-                        .HasComment("主键ID");
+                        .HasColumnType("int");
 
                     MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("Id"));
 
@@ -36,8 +37,7 @@ namespace Endfield.Api.Migrations
                         .IsRequired()
                         .HasMaxLength(20)
                         .HasColumnType("varchar(20)")
-                        .HasColumnName("bvid")
-                        .HasComment("B站视频唯一标识");
+                        .HasColumnName("bvid");
 
                     b.Property<string>("Comment")
                         .HasMaxLength(500)
@@ -49,8 +49,7 @@ namespace Endfield.Api.Migrations
                         .IsRequired()
                         .HasMaxLength(1000)
                         .HasColumnType("varchar(1000)")
-                        .HasColumnName("cover")
-                        .HasComment("视频封面URL");
+                        .HasColumnName("cover");
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime(6)")
@@ -70,13 +69,11 @@ namespace Endfield.Api.Migrations
 
                     b.Property<string>("Description")
                         .HasColumnType("text")
-                        .HasColumnName("description")
-                        .HasComment("视频简介");
+                        .HasColumnName("description");
 
                     b.Property<int>("Duration")
                         .HasColumnType("int")
-                        .HasColumnName("duration")
-                        .HasComment("视频时长（秒）");
+                        .HasColumnName("duration");
 
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("tinyint(1)")
@@ -85,27 +82,23 @@ namespace Endfield.Api.Migrations
 
                     b.Property<long>("LikeCount")
                         .HasColumnType("bigint")
-                        .HasColumnName("like_count")
-                        .HasComment("点赞数");
+                        .HasColumnName("like_count");
 
                     b.Property<string>("OwnerName")
                         .IsRequired()
                         .HasMaxLength(100)
                         .HasColumnType("varchar(100)")
-                        .HasColumnName("owner_name")
-                        .HasComment("UP主名称");
+                        .HasColumnName("owner_name");
 
                     b.Property<DateTime>("PublishTime")
                         .HasColumnType("datetime(6)")
-                        .HasColumnName("publish_time")
-                        .HasComment("发布时间");
+                        .HasColumnName("publish_time");
 
                     b.Property<string>("Title")
                         .IsRequired()
                         .HasMaxLength(500)
                         .HasColumnType("varchar(500)")
-                        .HasColumnName("title")
-                        .HasComment("视频标题");
+                        .HasColumnName("title");
 
                     b.Property<DateTime?>("UpdatedAt")
                         .HasColumnType("datetime(6)")
@@ -127,13 +120,11 @@ namespace Endfield.Api.Migrations
                         .IsRequired()
                         .HasMaxLength(200)
                         .HasColumnType("varchar(200)")
-                        .HasColumnName("url")
-                        .HasComment("视频链接");
+                        .HasColumnName("url");
 
                     b.Property<long>("ViewCount")
                         .HasColumnType("bigint")
-                        .HasColumnName("view_count")
-                        .HasComment("播放量");
+                        .HasColumnName("view_count");
 
                     b.HasKey("Id");
 
@@ -144,10 +135,7 @@ namespace Endfield.Api.Migrations
 
                     b.HasIndex("IsDeleted");
 
-                    b.ToTable("bilibili_videos", null, t =>
-                        {
-                            t.HasComment("B站视频信息表");
-                        });
+                    b.ToTable("bilibili_videos", (string)null);
                 });
 
             modelBuilder.Entity("Endfield.Api.Entities.RequestLog", b =>
@@ -371,9 +359,7 @@ namespace Endfield.Api.Migrations
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("int")
-                        .HasColumnName("id")
-                        .HasComment("用户ID");
+                        .HasColumnType("int");
 
                     MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("Id"));
 
@@ -402,13 +388,11 @@ namespace Endfield.Api.Migrations
                     b.Property<string>("Email")
                         .HasMaxLength(100)
                         .HasColumnType("varchar(100)")
-                        .HasColumnName("email")
-                        .HasComment("邮箱地址");
+                        .HasColumnName("email");
 
                     b.Property<bool>("IsActive")
                         .HasColumnType("tinyint(1)")
-                        .HasColumnName("is_active")
-                        .HasComment("是否启用");
+                        .HasColumnName("is_active");
 
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("tinyint(1)")
@@ -418,15 +402,13 @@ namespace Endfield.Api.Migrations
                     b.Property<string>("Nickname")
                         .HasMaxLength(50)
                         .HasColumnType("varchar(50)")
-                        .HasColumnName("nickname")
-                        .HasComment("昵称");
+                        .HasColumnName("nickname");
 
                     b.Property<string>("Password")
                         .IsRequired()
                         .HasMaxLength(200)
                         .HasColumnType("varchar(200)")
-                        .HasColumnName("password")
-                        .HasComment("密码（加密存储）");
+                        .HasColumnName("password");
 
                     b.Property<DateTime?>("UpdatedAt")
                         .HasColumnType("datetime(6)")
@@ -448,8 +430,7 @@ namespace Endfield.Api.Migrations
                         .IsRequired()
                         .HasMaxLength(50)
                         .HasColumnType("varchar(50)")
-                        .HasColumnName("username")
-                        .HasComment("用户名（登录名）");
+                        .HasColumnName("username");
 
                     b.HasKey("Id");
 
@@ -458,19 +439,14 @@ namespace Endfield.Api.Migrations
                     b.HasIndex("Username")
                         .IsUnique();
 
-                    b.ToTable("users", null, t =>
-                        {
-                            t.HasComment("用户表");
-                        });
+                    b.ToTable("users", (string)null);
                 });
 
             modelBuilder.Entity("Endfield.Api.Entities.VideoTag", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("int")
-                        .HasColumnName("id")
-                        .HasComment("主键ID");
+                        .HasColumnType("int");
 
                     MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("Id"));
 
@@ -478,8 +454,7 @@ namespace Endfield.Api.Migrations
                         .IsRequired()
                         .HasMaxLength(50)
                         .HasColumnType("varchar(50)")
-                        .HasColumnName("code")
-                        .HasComment("标签编码（唯一标识）");
+                        .HasColumnName("code");
 
                     b.Property<string>("Comment")
                         .HasMaxLength(500)
@@ -506,8 +481,7 @@ namespace Endfield.Api.Migrations
                     b.Property<string>("Description")
                         .HasMaxLength(200)
                         .HasColumnType("varchar(200)")
-                        .HasColumnName("description")
-                        .HasComment("标签描述");
+                        .HasColumnName("description");
 
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("tinyint(1)")
@@ -518,13 +492,11 @@ namespace Endfield.Api.Migrations
                         .IsRequired()
                         .HasMaxLength(50)
                         .HasColumnType("varchar(50)")
-                        .HasColumnName("name")
-                        .HasComment("标签名称");
+                        .HasColumnName("name");
 
                     b.Property<int>("SortOrder")
                         .HasColumnType("int")
-                        .HasColumnName("sort_order")
-                        .HasComment("排序序号");
+                        .HasColumnName("sort_order");
 
                     b.Property<DateTime?>("UpdatedAt")
                         .HasColumnType("datetime(6)")
@@ -551,28 +523,22 @@ namespace Endfield.Api.Migrations
 
                     b.HasIndex("SortOrder");
 
-                    b.ToTable("video_tags", null, t =>
-                        {
-                            t.HasComment("视频标签表");
-                        });
+                    b.ToTable("video_tags", (string)null);
                 });
 
             modelBuilder.Entity("Endfield.Api.Entities.VideoTagMapping", b =>
                 {
                     b.Property<int>("VideoId")
                         .HasColumnType("int")
-                        .HasColumnName("video_id")
-                        .HasComment("视频ID");
+                        .HasColumnName("video_id");
 
                     b.Property<int>("TagId")
                         .HasColumnType("int")
-                        .HasColumnName("tag_id")
-                        .HasComment("标签ID");
+                        .HasColumnName("tag_id");
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime(6)")
-                        .HasColumnName("created_at")
-                        .HasComment("创建时间");
+                        .HasColumnName("created_at");
 
                     b.HasKey("VideoId", "TagId");
 
@@ -580,10 +546,7 @@ namespace Endfield.Api.Migrations
 
                     b.HasIndex("TagId");
 
-                    b.ToTable("video_tag_mappings", null, t =>
-                        {
-                            t.HasComment("视频标签关联表");
-                        });
+                    b.ToTable("video_tag_mappings", (string)null);
                 });
 
             modelBuilder.Entity("Endfield.Api.Entities.VideoTagMapping", b =>
