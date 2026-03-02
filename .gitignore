@@ -6,3 +6,4 @@ Endfield/appsettings.Development.json
 /obj
 .DS_Store
 Endfield/Endfield.sln.DotSettings.user
+/Endfield/logs
