@@ -11,6 +11,8 @@ using Microsoft.OpenApi.Models;
 using System.Security.Claims;
 using Serilog;
 using Serilog.Events;
+using Hangfire;
+using Hangfire.MySql;
 
 // 初始化Serilog日志（最早初始化以捕获所有日志）
 var serilogOptions = new ConfigurationBuilder()
@@ -211,11 +213,29 @@ try
     builder.Services.AddDbContext<AppDbContext>(options =>
         options.UseMySql(connectionString, serverVersion));
 
+    // 配置 Hangfire（使用 MySQL 存储）
+    builder.Services.AddHangfire(config => config
+        .UseStorage(new MySqlStorage(connectionString, new MySqlStorageOptions
+        {
+            TransactionIsolationLevel = System.Transactions.IsolationLevel.ReadCommitted,
+            QueuePollInterval = TimeSpan.FromSeconds(15),
+            JobExpirationCheckInterval = TimeSpan.FromHours(1),
+            CountersAggregateInterval = TimeSpan.FromMinutes(5),
+            PrepareSchemaIfNecessary = true,
+            DashboardJobListLimit = 50000,
+            TransactionTimeout = TimeSpan.FromMinutes(1),
+            TablesPrefix = "Hangfire"
+        })));
+
+    // 添加 Hangfire 服务器
+    builder.Services.AddHangfireServer();
+
     // 注册服务
     builder.Services.AddScoped<IBilibiliService, BilibiliService>();
     builder.Services.AddScoped<ITagService, TagService>();
     builder.Services.AddScoped<IAuthService, AuthService>();
     builder.Services.AddScoped<IRequestLogService, RequestLogService>();
+    builder.Services.AddScoped<IVideoRefreshService, VideoRefreshService>();
 
     // 添加CORS支持
     builder.Services.AddCors(options =>
@@ -241,6 +261,19 @@ try
     app.UseCors();
     app.UseAuthentication();
     app.UseAuthorization();
+
+    // 配置 Hangfire Dashboard（仅在开发环境启用）
+    if (app.Environment.IsDevelopment())
+    {
+        app.UseHangfireDashboard("/hangfire");
+    }
+
+    // 配置定时任务：每天凌晨1点刷新近一个月的视频
+    RecurringJob.AddOrUpdate<IVideoRefreshService>(
+        "RefreshRecentVideos",
+        service => service.RefreshRecentVideosAsync(CancellationToken.None),
+        "0 1 * * *",
+        new RecurringJobOptions { TimeZone = TimeZoneInfo.Local });
 
     app.MapControllers();
 

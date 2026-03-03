@@ -139,6 +139,12 @@ public partial class BilibiliService(
             await UpdateVideoTagsAsync(video, inputDto.TagIds, token);
         }
 
+        // 更新置顶状态
+        if (inputDto.IsPinned.HasValue)
+        {
+            video.IsPinned = inputDto.IsPinned.Value;
+        }
+
         video.UpdatedAt = DateTime.Now;
         await dbContext.SaveChangesAsync(token);
 
@@ -186,7 +192,9 @@ public partial class BilibiliService(
         var total = await query.CountAsync(token);
 
         var videos = await query
-            .OrderByDescending(v => v.CreatedAt)
+            .OrderByDescending(v => v.IsPinned)
+            .ThenByDescending(v => v.PublishTime)
+            .ThenByDescending(v => v.ViewCount)
             .Skip((inputDto.Page - 1) * inputDto.PageSize)
             .Take(inputDto.PageSize)
             .ToListAsync(token);
@@ -319,6 +327,7 @@ public partial class BilibiliService(
             ViewCount = entity.ViewCount,
             LikeCount = entity.LikeCount,
             PublishTime = entity.PublishTime,
+            IsPinned = entity.IsPinned,
             Tags = entity.VideoTagMappings.Select(m => new VTagInfoModel
             {
                 Id = m.Tag.Id,

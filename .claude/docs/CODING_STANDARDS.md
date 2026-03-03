@@ -119,6 +119,28 @@ _logger.LogInformation("获取视频成功，VideoId: {VideoId}", videoId);
 _logger.LogInformation($"获取视频成功，VideoId: {videoId}");
 ```
 
+## 枚举规范
+
+**枚举值必须从 1 开始**，避免与默认值（0）混淆：
+
+```csharp
+// ✅ 正确：从 1 开始
+public enum VideoRefreshStatus
+{
+    Pending = 1,
+    Success = 2,
+    Failed = 3,
+    RateLimited = 4
+}
+
+// ❌ 错误：从 0 开始（与未初始化的默认值混淆）
+public enum Status
+{
+    Active = 0,    // 与 new Status() 的默认值相同，难以区分
+    Inactive = 1
+}
+```
+
 ## 通用规范
 
 ### 禁止硬编码

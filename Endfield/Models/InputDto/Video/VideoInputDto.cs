@@ -36,6 +36,11 @@ public record UpdateVideoInputDto
     public bool RefreshInfo { get; init; } = true;
 
     /// <summary>
+    /// 是否置顶（为 null 则不更新置顶状态）
+    /// </summary>
+    public bool? IsPinned { get; init; }
+
+    /// <summary>
     /// 标签ID列表（为空则不更新标签）
     /// </summary>
     public List<int>? TagIds { get; init; }

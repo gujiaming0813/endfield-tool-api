@@ -1,3 +1,5 @@
+using Endfield.Api.Share.Enums;
+
 namespace Endfield.Api.Entities;
 
 /// <summary>
@@ -59,6 +61,26 @@ public class BilibiliVideo : BaseAuditModel
     /// 发布时间
     /// </summary>
     public DateTime PublishTime { get; set; }
+
+    /// <summary>
+    /// 是否置顶
+    /// </summary>
+    public bool IsPinned { get; set; }
+
+    /// <summary>
+    /// 上次刷新时间
+    /// </summary>
+    public DateTime? LastRefreshTime { get; set; }
+
+    /// <summary>
+    /// 刷新状态
+    /// </summary>
+    public VideoRefreshStatus RefreshStatus { get; set; } = VideoRefreshStatus.Pending;
+
+    /// <summary>
+    /// 刷新失败次数
+    /// </summary>
+    public int RefreshRetryCount { get; set; }
 
     /// <summary>
     /// 视频标签关联（多对多）

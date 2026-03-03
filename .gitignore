@@ -8,3 +8,6 @@ Endfield/appsettings.Development.json
 Endfield/Endfield.sln.DotSettings.user
 /Endfield/logs
 .claude/docs/HARNESS_ENGINEERING_PROMPT.md
+
+# 测试项目
+Endfield.Tests/

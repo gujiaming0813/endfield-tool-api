@@ -4,6 +4,7 @@ using Endfield.Api.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace Endfield.Api.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260303132239_AddVideoPinned")]
+    partial class AddVideoPinned
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -86,9 +89,6 @@ namespace Endfield.Api.Migrations
                     b.Property<bool>("IsPinned")
                         .HasColumnType("tinyint(1)");
 
-                    b.Property<DateTime?>("LastRefreshTime")
-                        .HasColumnType("datetime(6)");
-
                     b.Property<long>("LikeCount")
                         .HasColumnType("bigint")
                         .HasColumnName("like_count")
@@ -105,12 +105,6 @@ namespace Endfield.Api.Migrations
                         .HasColumnType("datetime(6)")
                         .HasColumnName("publish_time")
                         .HasComment("发布时间");
-
-                    b.Property<int>("RefreshRetryCount")
-                        .HasColumnType("int");
-
-                    b.Property<int>("RefreshStatus")
-                        .HasColumnType("int");
 
                     b.Property<string>("Title")
                         .IsRequired()

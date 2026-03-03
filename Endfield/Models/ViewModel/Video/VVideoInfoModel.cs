@@ -63,6 +63,11 @@ public record VVideoInfoModel
     public DateTime PublishTime { get; init; }
 
     /// <summary>
+    /// 是否置顶
+    /// </summary>
+    public bool IsPinned { get; init; }
+
+    /// <summary>
     /// 视频标签列表
     /// </summary>
     public List<VTagInfoModel> Tags { get; init; } = [];
