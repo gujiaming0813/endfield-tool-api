@@ -242,18 +242,6 @@ try
     app.UseAuthentication();
     app.UseAuthorization();
 
-    // 使用Serilog请求日志中间件
-    app.UseSerilogRequestLogging(options =>
-    {
-        options.EnrichDiagnosticContext = (diagnosticContext, httpContext) =>
-        {
-            diagnosticContext.Set("RequestHost", httpContext.Request.Host.Value);
-            diagnosticContext.Set("RequestScheme", httpContext.Request.Scheme);
-            diagnosticContext.Set("UserId", httpContext.User?.FindFirst(ClaimTypes.NameIdentifier)?.Value);
-            diagnosticContext.Set("CorrelationId", httpContext.Items["CorrelationId"]);
-        };
-    });
-
     app.MapControllers();
 
     Log.Information("应用启动完成，正在监听端口");

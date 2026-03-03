@@ -14,15 +14,13 @@ namespace Endfield.Api.Filters;
 /// </summary>
 public class LogActionFilter : IAsyncActionFilter
 {
-    private const string StopwatchKey = "__LogActionFilter_Stopwatch__";
     private const string RequestLogKey = "__LogActionFilter_RequestLog__";
-    private const string RequestBodyKey = "__LogActionFilter_RequestBody__";
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         WriteIndented = false,
-        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping // 支持中文不转义
+        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
     };
 
     private static readonly HashSet<string> SensitiveFields = new(StringComparer.OrdinalIgnoreCase)
@@ -46,15 +44,12 @@ public class LogActionFilter : IAsyncActionFilter
 
         // 存储到 HttpContext 供后续使用
         context.HttpContext.Items["CorrelationId"] = correlationId;
-        context.HttpContext.Items[StopwatchKey] = stopwatch;
 
         // 存储 API 名称（Controller/Action）
-        var controller = context.ActionDescriptor.RouteValues["controller"];
-        var action = context.ActionDescriptor.RouteValues["action"];
-        if (!string.IsNullOrEmpty(controller) && !string.IsNullOrEmpty(action))
-        {
-            context.HttpContext.Items["ApiName"] = $"{controller}/{action}";
-        }
+        var controller = context.ActionDescriptor.RouteValues["controller"] ?? "";
+        var action = context.ActionDescriptor.RouteValues["action"] ?? "";
+        var apiName = $"{controller}/{action}";
+        context.HttpContext.Items["ApiName"] = apiName;
 
         // 读取请求体（需要启用缓冲）
         string? requestBody = null;
@@ -65,9 +60,7 @@ public class LogActionFilter : IAsyncActionFilter
                 httpRequest.EnableBuffering();
                 using var reader = new StreamReader(httpRequest.Body, Encoding.UTF8, leaveOpen: true);
                 requestBody = await reader.ReadToEndAsync();
-                httpRequest.Body.Position = 0; // 重置位置以便后续读取
-
-                // 清理敏感信息
+                httpRequest.Body.Position = 0;
                 requestBody = SanitizeJson(requestBody);
             }
             catch
@@ -85,23 +78,6 @@ public class LogActionFilter : IAsyncActionFilter
         // 创建请求日志实体
         var requestLog = _requestLogService.CreateRequestLog(context.HttpContext, requestBody);
         context.HttpContext.Items[RequestLogKey] = requestLog;
-
-        // 获取请求信息（用于 Serilog 日志）
-        var requestInfo = new
-        {
-            requestLog.CorrelationId,
-            requestLog.RequestMethod,
-            requestLog.RequestPath,
-            requestLog.QueryString,
-            requestLog.UserAgent,
-            requestLog.ClientIp,
-            requestLog.UserId,
-            requestLog.ApiName,
-            Arguments = SanitizeArguments(context.ActionArguments)
-        };
-
-        // 记录请求开始（同时输出到 Serilog）
-        Log.Information("HTTP请求开始 {@RequestInfo}", requestInfo);
 
         // 执行Action
         var executedContext = await next();
@@ -139,28 +115,22 @@ public class LogActionFilter : IAsyncActionFilter
         // 异步保存日志到数据库（不阻塞请求）
         await _requestLogService.SaveLogAsync(requestLog);
 
-        // 记录响应（同时输出到 Serilog）
-        var responseInfo = new
-        {
-            requestLog.CorrelationId,
-            requestLog.StatusCode,
-            requestLog.DurationMs,
-            requestLog.IsSuccess,
-            Exception = executedContext.Exception != null ? new
-            {
-                Type = executedContext.Exception.GetType().Name,
-                executedContext.Exception.Message,
-                executedContext.Exception.StackTrace
-            } : null
-        };
+        // 输出简化的请求日志（合并为一条）
+        var method = httpRequest.Method;
+        var path = httpRequest.Path.Value ?? "";
+        var statusCode = executedContext.Exception != null ? 500 : requestLog.StatusCode;
+        var duration = stopwatch.ElapsedMilliseconds;
+        var shortId = correlationId[..8]; // 日志显示时使用短码，便于阅读
 
         if (executedContext.Exception != null)
         {
-            Log.Error(executedContext.Exception, "HTTP请求异常 {@ResponseInfo}", responseInfo);
+            Log.Error("[{ShortId}] {Method} {Path} -> {StatusCode} ({Duration}ms) | 异常: {ExceptionMessage}",
+                shortId, method, path, statusCode, duration, executedContext.Exception.Message);
         }
         else
         {
-            Log.Information("HTTP请求完成 {@ResponseInfo}", responseInfo);
+            Log.Information("[{ShortId}] {Method} {Path} -> {StatusCode} ({Duration}ms)",
+                shortId, method, path, statusCode, duration);
         }
     }
 
@@ -191,7 +161,6 @@ public class LogActionFilter : IAsyncActionFilter
             }
             else
             {
-                // 复杂对象，序列化并清理敏感字段
                 try
                 {
                     var json = JsonSerializer.Serialize(arg.Value, JsonOptions);
@@ -226,7 +195,7 @@ public class LogActionFilter : IAsyncActionFilter
             using (var jsonWriter = new Utf8JsonWriter(stream, new JsonWriterOptions
             {
                 Indented = false,
-                Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping // 支持中文不转义
+                Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
             }))
             {
                 SanitizeJsonElement(doc.RootElement, jsonWriter);
@@ -305,17 +274,16 @@ public class GlobalExceptionFilter : IAsyncExceptionFilter
 {
     public Task OnExceptionAsync(ExceptionContext context)
     {
-        var correlationId = context.HttpContext.Items["CorrelationId"]?.ToString() ?? Guid.NewGuid().ToString("N");
+        var correlationId = context.HttpContext.Items["CorrelationId"]?.ToString() ?? "unknown";
+        var shortId = correlationId.Length >= 8 ? correlationId[..8] : correlationId;
+        var request = context.HttpContext.Request;
 
-        Log.Error(context.Exception, "全局异常捕获 {@ExceptionInfo}", new
-        {
-            CorrelationId = correlationId,
-            Path = context.HttpContext.Request.Path.Value,
-            Method = context.HttpContext.Request.Method,
-            ExceptionType = context.Exception.GetType().Name,
-            ExceptionMessage = context.Exception.Message,
-            StackTrace = context.Exception.StackTrace
-        });
+        Log.Error("[{ShortId}] 全局异常 | {Method} {Path} | {ExceptionType}: {ExceptionMessage}",
+            shortId,
+            request.Method,
+            request.Path.Value,
+            context.Exception.GetType().Name,
+            context.Exception.Message);
 
         return Task.CompletedTask;
     }
