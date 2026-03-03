@@ -134,7 +134,7 @@ public class AuthService(
             issuer: _jwtOptions.Issuer,
             audience: _jwtOptions.Audience,
             claims: claims,
-            expires: DateTime.UtcNow.AddHours(_jwtOptions.ExpirationHours),
+            expires: DateTime.Now.AddHours(_jwtOptions.ExpirationHours),
             signingCredentials: credentials
         );
 

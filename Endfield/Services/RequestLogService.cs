@@ -74,7 +74,7 @@ public class RequestLogService : IRequestLogService, ITransientTag
         var requestLog = new RequestLog
         {
             CorrelationId = httpContext.Items["CorrelationId"]?.ToString() ?? Guid.NewGuid().ToString("N"),
-            RequestTime = DateTime.UtcNow,
+            RequestTime = DateTime.Now,
             RequestMethod = request.Method,
             RequestPath = request.Path.Value,
             QueryString = request.QueryString.Value,
@@ -99,7 +99,7 @@ public class RequestLogService : IRequestLogService, ITransientTag
     {
         var response = httpContext.Response;
 
-        requestLog.ResponseTime = DateTime.UtcNow;
+        requestLog.ResponseTime = DateTime.Now;
         requestLog.DurationMs = (long)(requestLog.ResponseTime.Value - requestLog.RequestTime).TotalMilliseconds;
         requestLog.StatusCode = response.StatusCode;
         requestLog.IsSuccess = exception == null && response.StatusCode is >= 200 and < 400;

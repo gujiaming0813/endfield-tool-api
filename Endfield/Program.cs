@@ -217,12 +217,6 @@ try
     builder.Services.AddScoped<IAuthService, AuthService>();
     builder.Services.AddScoped<IRequestLogService, RequestLogService>();
 
-    // 配置QQ机器人选项
-    builder.Services.Configure<QQBotOptions>(builder.Configuration.GetSection("QQBot"));
-
-    // 注册QQ机器人Webhook服务
-    builder.Services.AddSingleton<IQQBotService, QQBotService>();
-
     // 添加CORS支持
     builder.Services.AddCors(options =>
     {

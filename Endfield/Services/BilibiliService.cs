@@ -79,7 +79,7 @@ public partial class BilibiliService(
             ViewCount = videoInfo.ViewCount,
             LikeCount = videoInfo.LikeCount,
             PublishTime = videoInfo.PublishTime,
-            CreatedAt = DateTime.UtcNow
+            CreatedAt = DateTime.Now
         };
 
         dbContext.BilibiliVideos.Add(entity);
@@ -139,7 +139,7 @@ public partial class BilibiliService(
             await UpdateVideoTagsAsync(video, inputDto.TagIds, token);
         }
 
-        video.UpdatedAt = DateTime.UtcNow;
+        video.UpdatedAt = DateTime.Now;
         await dbContext.SaveChangesAsync(token);
 
         // 重新查询以获取完整的标签信息（包括新添加的标签导航属性）
@@ -233,7 +233,7 @@ public partial class BilibiliService(
         }
 
         video.IsDeleted = true;
-        video.UpdatedAt = DateTime.UtcNow;
+        video.UpdatedAt = DateTime.Now;
         await dbContext.SaveChangesAsync(token);
 
         logger.LogInformation("删除视频成功: {VideoId}", inputDto.VideoId);
@@ -263,7 +263,7 @@ public partial class BilibiliService(
             {
                 VideoId = video.Id,
                 TagId = tagId,
-                CreatedAt = DateTime.UtcNow
+                CreatedAt = DateTime.Now
             });
         }
 

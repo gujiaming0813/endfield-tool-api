@@ -18,7 +18,7 @@ public class VideoTagMapping
     /// <summary>
     /// 关联创建时间
     /// </summary>
-    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
 
     /// <summary>
     /// 关联的视频

@@ -83,7 +83,7 @@ public class TagService(AppDbContext dbContext, ILogger<TagService> logger) : IT
             Code = inputDto.Code,
             Description = inputDto.Description,
             SortOrder = inputDto.SortOrder,
-            CreatedAt = DateTime.UtcNow
+            CreatedAt = DateTime.Now
         };
 
         dbContext.VideoTags.Add(tag);
@@ -119,7 +119,7 @@ public class TagService(AppDbContext dbContext, ILogger<TagService> logger) : IT
         tag.Name = inputDto.Name;
         tag.Description = inputDto.Description;
         tag.SortOrder = inputDto.SortOrder;
-        tag.UpdatedAt = DateTime.UtcNow;
+        tag.UpdatedAt = DateTime.Now;
 
         await dbContext.SaveChangesAsync(token);
 
@@ -152,7 +152,7 @@ public class TagService(AppDbContext dbContext, ILogger<TagService> logger) : IT
         }
 
         tag.IsDeleted = true;
-        tag.UpdatedAt = DateTime.UtcNow;
+        tag.UpdatedAt = DateTime.Now;
         await dbContext.SaveChangesAsync(token);
 
         logger.LogInformation("删除标签成功: {TagId}", inputDto.TagId);
