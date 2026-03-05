@@ -8,4 +8,5 @@
 **/*.suo
 **/appsettings.Development.json
 **/.DS_Store
+**/.claude
 **/Migrations

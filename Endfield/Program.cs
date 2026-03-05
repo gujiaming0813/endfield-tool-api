@@ -267,13 +267,18 @@ try
     {
         app.UseHangfireDashboard("/hangfire");
     }
-
-    // 配置定时任务：每天凌晨1点刷新近一个月的视频
-    RecurringJob.AddOrUpdate<IVideoRefreshService>(
-        "RefreshRecentVideos",
-        service => service.RefreshRecentVideosAsync(CancellationToken.None),
-        "0 1 * * *",
-        new RecurringJobOptions { TimeZone = TimeZoneInfo.Local });
+    
+    using (var scope = app.Services.CreateScope())
+    {
+        var recurringJobManager = scope.ServiceProvider.GetRequiredService<IRecurringJobManager>();
+    
+        // 配置定时任务：每天凌晨1点刷新近一个月的视频
+        recurringJobManager.AddOrUpdate<IVideoRefreshService>(
+                                                              "RefreshRecentVideos",
+                                                              service => service.RefreshRecentVideosAsync(CancellationToken.None),
+                                                              "0 1 * * *",
+                                                              new RecurringJobOptions { TimeZone = TimeZoneInfo.Local });
+    }
 
     app.MapControllers();
 
